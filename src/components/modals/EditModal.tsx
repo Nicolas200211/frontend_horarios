@@ -1,4 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { Input, Select, DatePicker, TimePicker } from 'antd';
+import dayjs, { Dayjs } from 'dayjs';
+import 'dayjs/locale/es';
+
+dayjs.locale('es');
 
 interface EditModalProps {
   isVisible: boolean;
@@ -9,10 +14,14 @@ interface EditModalProps {
   fields: Array<{
     name: string;
     label: string;
-    type: 'text' | 'select' | 'number' | 'date';
+    type: 'text' | 'select' | 'number' | 'date' | 'time';
     options?: Array<{ value: any; label: string }>;
     required?: boolean;
     loading?: boolean;
+    format?: string;
+    showNow?: boolean;
+    minuteStep?: number;
+    inputReadOnly?: boolean;
   }>;
   loading?: boolean;
 }
@@ -26,25 +35,42 @@ const EditModal: React.FC<EditModalProps> = ({
   fields,
   loading = false,
 }) => {
-  const [formValues, setFormValues] = useState<any>({});
+  const [formValues, setFormValues] = useState<Record<string, any>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    if (isVisible && initialValues) {
-      setFormValues({ ...initialValues });
-    } else {
-      // Reset form when opening with no initial values
-      const defaultValues: any = {};
-      fields.forEach(field => {
-        defaultValues[field.name] = '';
-      });
-      setFormValues(defaultValues);
+    if (isVisible) {
+      if (initialValues) {
+        // Create a copy of initialValues to avoid mutating the original
+        const formattedValues = { ...initialValues };
+        
+        // Format date fields if they exist
+        fields.forEach(field => {
+          if (field.type === 'date' && initialValues[field.name]) {
+            // If it's already a Dayjs object, use it directly
+            if (typeof initialValues[field.name]?.format === 'function') {
+              formattedValues[field.name] = initialValues[field.name];
+            } else {
+              // Otherwise, parse the date string
+              formattedValues[field.name] = dayjs(initialValues[field.name]);
+            }
+          }
+        });
+        
+        setFormValues(formattedValues);
+      } else {
+        // Reset form when opening with no initial values
+        const defaultValues: any = {};
+        fields.forEach(field => {
+          defaultValues[field.name] = '';
+        });
+        setFormValues(defaultValues);
+      }
+      setErrors({});
     }
-    setErrors({});
   }, [isVisible, initialValues, fields]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
+  const handleChange = (name: string, value: any) => {
     setFormValues((prev: any) => ({
       ...prev,
       [name]: value
@@ -56,6 +82,29 @@ const EditModal: React.FC<EditModalProps> = ({
         [name]: ''
       }));
     }
+  };
+  
+  // Convert date string to Dayjs object for DatePicker
+  const getDateValue = (dateValue: any) => {
+    if (!dateValue) return undefined;
+    // If it's already a Dayjs object, return it
+    if (dateValue && typeof dateValue.format === 'function') return dateValue;
+    // Otherwise, try to parse it as a date string
+    return dayjs(dateValue, 'YYYY-MM-DD').isValid() ? dayjs(dateValue, 'YYYY-MM-DD') : undefined;
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    handleChange(name, value);
+  };
+
+  const handleTimeChange = (time: Dayjs | null, fieldName: string) => {
+    handleChange(fieldName, time ? time.format('HH:mm') : '');
+  };
+
+  const getTimeValue = (timeString: string | undefined) => {
+    if (!timeString) return undefined;
+    return dayjs(timeString, 'HH:mm').isValid() ? dayjs(timeString, 'HH:mm') : undefined;
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -92,21 +141,16 @@ const EditModal: React.FC<EditModalProps> = ({
             <label htmlFor={field.name} className={labelClasses}>
               {field.label} {field.required && <span className="text-red-500">*</span>}
             </label>
-            <select
-              id={field.name}
-              name={field.name}
-              value={formValues[field.name] || ''}
-              onChange={handleChange}
-              className={commonClasses}
-              disabled={field.loading || loading}
-            >
-              <option value="">Seleccione una opción</option>
-              {field.options?.map((option: any) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+            <Select
+              placeholder={`Seleccione ${field.label.toLowerCase()}`}
+              style={{ width: '100%' }}
+              value={formValues[field.name]}
+              onChange={(value) => handleChange(field.name, value)}
+              options={field.options}
+              disabled={field.disabled || (field.options && field.options.length === 1 && field.options[0].value === '')}
+              loading={field.loading}
+              notFoundContent={field.loading ? 'Cargando...' : 'No hay opciones disponibles'}
+            />
             {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
           </div>
         );
@@ -116,14 +160,30 @@ const EditModal: React.FC<EditModalProps> = ({
             <label htmlFor={field.name} className={labelClasses}>
               {field.label} {field.required && <span className="text-red-500">*</span>}
             </label>
-            <input
-              type="date"
-              id={field.name}
+            <DatePicker
+              className="w-full"
               name={field.name}
-              value={formValues[field.name] || ''}
-              onChange={handleChange}
-              className={commonClasses}
-              disabled={loading}
+              format={field.format || 'YYYY-MM-DD'}
+              value={getDateValue(formValues[field.name])}
+              onChange={(date) => handleChange(field.name, date)}
+            />
+            {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
+          </div>
+        );
+      case 'time':
+        return (
+          <div key={field.name} className="mb-4">
+            <label htmlFor={field.name} className={labelClasses}>
+              {field.label} {field.required && <span className="text-red-500">*</span>}
+            </label>
+            <TimePicker
+              className="w-full"
+              format="HH:mm"
+              minuteStep={field.minuteStep || 15}
+              showNow={field.showNow || false}
+              inputReadOnly={field.inputReadOnly || false}
+              value={getTimeValue(formValues[field.name])}
+              onChange={(time) => handleTimeChange(time, field.name)}
             />
             {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
           </div>
@@ -134,12 +194,11 @@ const EditModal: React.FC<EditModalProps> = ({
             <label htmlFor={field.name} className={labelClasses}>
               {field.label} {field.required && <span className="text-red-500">*</span>}
             </label>
-            <input
+            <Input
               type="number"
-              id={field.name}
               name={field.name}
               value={formValues[field.name] || ''}
-              onChange={handleChange}
+              onChange={handleInputChange}
               className={commonClasses}
               disabled={loading}
             />
@@ -152,12 +211,11 @@ const EditModal: React.FC<EditModalProps> = ({
             <label htmlFor={field.name} className={labelClasses}>
               {field.label} {field.required && <span className="text-red-500">*</span>}
             </label>
-            <input
+            <Input
               type="text"
-              id={field.name}
               name={field.name}
               value={formValues[field.name] || ''}
-              onChange={handleChange}
+              onChange={handleInputChange}
               className={commonClasses}
               disabled={loading}
             />

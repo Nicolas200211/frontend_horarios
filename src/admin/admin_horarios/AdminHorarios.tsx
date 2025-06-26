@@ -1,261 +1,84 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
+import dayjs from 'dayjs';
+import { Card, Button, message, Table } from 'antd';
+import { PlusOutlined } from '@ant-design/icons';
+import type { FiltrosHorario } from './types';
+
+// Hooks
+import { useHorariosData } from './hooks/useHorariosData';
+
+// Services
 import { 
-  Form, 
-  Select, 
-  message, 
-  Table, 
-  Button, 
-  Space,
-} from 'antd';
+  createHorario as createHorarioService,
+  updateHorario as updateHorarioService,
+  deleteHorario as deleteHorarioService
+} from './horariosService';
+
+// Components
 import ConfirmDelete from '../../components/modals/ConfirmDelete';
 import EditModal from '../../components/modals/EditModal';
-import type { Horario, HorarioFormData, FiltrosHorario, DiaSemana, TipoClase } from './types';
-import * as horarioService from './horariosService';
-import 'antd/dist/reset.css';
-import dayjs from 'dayjs';
-import customParseFormat from 'dayjs/plugin/customParseFormat';
 
-dayjs.extend(customParseFormat);
-
-// Helper para notificaciones
-const notify = (type: 'success' | 'error' | 'info' | 'warning', msg: string) => {
-  message[type](msg);
-};
+// Types
+import type { Horario, HorarioFormData, HorarioFormValues } from './types';
 
 const AdminHorarios: React.FC = () => {
-  // State management
-  const [horarios, setHorarios] = useState<Horario[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
-  const [showDeleteModal, setShowDeleteModal] = useState<boolean>(false);
-  const [currentHorario, setCurrentHorario] = useState<Horario | null>(null);
-  const [horarioToDelete, setHorarioToDelete] = useState<number | null>(null);
-  const [filtros, setFiltros] = useState<FiltrosHorario>({});
-  const [paginaActual, setPaginaActual] = useState<number>(1);
-  const [total, setTotal] = useState<number>(0);
-  const [diasSemana, setDiasSemana] = useState<DiaSemana[]>([]);
-  const [tiposClase, setTiposClase] = useState<TipoClase[]>([]);
-  const [form] = Form.useForm<HorarioFormData>();
+  // State for table pagination and filters
+  const [filters] = useState<FiltrosHorario>({});
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   
-  // Constants
-  const tamanoPagina = 10;
-
-  // Load initial data
-  useEffect(() => {
-    const loadInitialData = async () => {
-      try {
-        const [dias, tipos] = await Promise.all([
-          horarioService.getDiasSemana(),
-          horarioService.getTiposClase()
-        ]);
-        setDiasSemana(dias);
-        setTiposClase(tipos);
-      } catch (error) {
-        console.error('Error al cargar datos iniciales:', error);
-        message.error('Error al cargar datos iniciales');
-      }
-    };
-
-    loadInitialData();
-  }, []);
-
-  // Fetch horarios when filters or page changes
-  useEffect(() => {
-    const fetchHorarios = async () => {
-      try {
-        setLoading(true);
-        const response = await horarioService.getHorarios({
-          ...filtros,
-          skip: (paginaActual - 1) * tamanoPagina,
-          limit: tamanoPagina,
-        });
-        setHorarios(response.items);
-        setTotal(response.total);
-      } catch (error) {
-        console.error('Error al cargar horarios:', error);
-        message.error('Error al cargar la lista de horarios');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchHorarios();
-  }, [filtros, paginaActual]);
+  // Use the useHorariosData hook to manage data fetching
+  const {
+    data,
+    loading,
+    loadHorarios,
+    reloadData,
+    pagination: paginationData
+  } = useHorariosData({
+    page: currentPage,
+    pageSize,
+    filters
+  });
   
-  // Fetch data on component mount and when filters change
-  useEffect(() => {
-    cargarHorarios();
-  }, [paginaActual, filtros]);
+  // Ensure data properties are always arrays
+  const aulas = Array.isArray(data?.aulas) ? data.aulas : [];
+  const cursos = Array.isArray(data?.cursos) ? data.cursos : [];
+  const profesores = Array.isArray(data?.profesores) ? data.profesores : [];
+  const unidadesAcademicas = Array.isArray(data?.unidadesAcademicas) ? data.unidadesAcademicas : [];
+  const tiposClase = Array.isArray(data?.tiposClase) ? data.tiposClase : [];
+  const horarios = Array.isArray(data?.horarios) ? data.horarios : [];
+  
+  // Debug log for aulas data
+  console.log('Aulas in component:', aulas);
 
-  // Cargar horarios desde la API
-  const cargarHorarios = async () => {
-    try {
-      setLoading(true);
-      const response = await horarioService.getHorarios({
-        ...filtros,
-        skip: (paginaActual - 1) * tamanoPagina,
-        limit: tamanoPagina,
-      });
-      setHorarios(response.items);
-      setTotal(response.total);
-    } catch (error) {
-      notify('error', 'Error al cargar los horarios');
-      console.error('Error al cargar horarios:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSubmit = async (values: HorarioFormData) => {
-    try {
-      setLoading(true);
-      
-      const formatTime = (timeValue: any): string => {
-        if (!timeValue) return '';
-        if (typeof timeValue === 'object' && timeValue.format) {
-          return timeValue.format('HH:mm:ss');
-        }
-        if (typeof timeValue === 'string') {
-          if (/^\d{2}:\d{2}$/.test(timeValue)) {
-            return `${timeValue}:00`;
-          }
-          if (/^\d{2}:\d{2}:\d{2}$/.test(timeValue)) {
-            return timeValue;
-          }
-        }
-        return '';
-      };
-      const formattedValues: HorarioFormData = {
-        ...values,
-        hora_inicio: formatTime(values.hora_inicio),
-        hora_fin: formatTime(values.hora_fin),
-        dia: values.dia,
-        tipo_clase: values.tipo_clase || 'Teoría',
-        profesor_id: values.profesor_id || 1,
-        curso_id: values.curso_id || 1,
-        aula_id: values.aula_id || 1,
-        unidad_academica_id: values.unidad_academica_id || 1
-      };
-
-      if (currentHorario) {
-        // Update existing horario
-        const updatedHorario = await horarioService.updateHorario(currentHorario.id, formattedValues);
-        setHorarios(horarios.map(h => h.id === updatedHorario.id ? updatedHorario : h));
-        message.success('Horario actualizado correctamente');
-      } else {
-        // Create new horario
-        const newHorario = await horarioService.createHorario(formattedValues);
-        setHorarios([newHorario, ...horarios]);
-        message.success('Horario creado correctamente');
-      }
-      setIsModalOpen(false);
-      form.resetFields();
-    } catch (error) {
-      console.error('Error al guardar el horario:', error);
-      message.error(error instanceof Error ? error.message : 'Error al guardar el horario');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Manejar eliminación de horario
-  const handleDelete = (id: number) => {
-    setHorarioToDelete(id);
-    setShowDeleteModal(true);
-  };
-
-  const handleDeleteConfirm = async () => {
-    if (!horarioToDelete) return;
-    
-    try {
-      setLoading(true);
-      await horarioService.deleteHorario(horarioToDelete);
-      setHorarios(horarios.filter(h => h.id !== horarioToDelete));
-      setShowDeleteModal(false);
-      message.success('Horario eliminado correctamente');
-    } catch (error) {
-      console.error('Error al eliminar el horario:', error);
-      message.error(error instanceof Error ? error.message : 'Error al eliminar el horario');
-    } finally {
-      setLoading(false);
-      setHorarioToDelete(null);
-    }
-  };
-
-  // Preparar los valores del formulario
-  const handleNewHorario = () => {
-    setCurrentHorario(null);
-    form.resetFields();
-    form.setFieldsValue({
-      tipo_clase: 'Teoría',
-      hora_inicio: dayjs('08:00:00', 'HH:mm:ss'),
-      hora_fin: dayjs('09:00:00', 'HH:mm:ss')
-    } as any); // Using type assertion since we know the format is correct
-    setIsModalOpen(true);
-  };
-
-  const handleEdit = (horario: Horario) => {
-    setCurrentHorario(horario);
-    form.setFieldsValue({
-      ...horario,
-      hora_inicio: horario.hora_inicio ? dayjs(horario.hora_inicio, 'HH:mm:ss') : undefined,
-      hora_fin: horario.hora_fin ? dayjs(horario.hora_fin, 'HH:mm:ss') : undefined
-    } as any); // Using type assertion since we know the format is correct
-    setIsModalOpen(true);
-  };
-
-  const handleCancel = () => {
-    setIsModalOpen(false);
-    form.resetFields();
-  };
-
-  const handleSave = (values: any) => {
-    handleSubmit(values as HorarioFormData);
-  };
-
-  // Columnas de la tabla
+  // Definir columnas de la tabla
   const columns: any[] = [
     {
+      title: 'ID',
+      dataIndex: 'id',
+      key: 'id',
+    },
+    {
       title: 'Aula',
+      dataIndex: ['aula', 'nombre'],
       key: 'aula',
-      render: (_: any, record: Horario) => {
-        // Handle aula data that might be nested or flat
-        if (record.aula && typeof record.aula === 'object') {
-          return record.aula.nombre || 'N/A';
-        }
-        return 'N/A';
-      },
     },
     {
       title: 'Curso',
+      dataIndex: ['curso', 'nombre'],
       key: 'curso',
-      render: (_: any, record: Horario) => {
-        // Handle curso data that might be nested or flat
-        if (record.curso && typeof record.curso === 'object') {
-          return record.curso.nombre || 'N/A';
-        }
-        return 'N/A';
-      },
     },
     {
       title: 'Profesor',
+      dataIndex: ['profesor', 'nombres'],
       key: 'profesor',
-      render: (_: any, record: Horario) => {
-        // Handle profesor data that might be nested or flat
-        if (record.profesor && typeof record.profesor === 'object') {
-          const nombre = record.profesor.nombres || '';
-          const apellido = record.profesor.apellidos || '';
-          return `${nombre} ${apellido}`.trim() || 'N/A';
-        }
-        return 'N/A';
-      },
+      render: (_: string, record: any) => 
+        `${record.profesor?.nombres} ${record.profesor?.apellidos}`,
     },
     {
       title: 'Día',
       dataIndex: 'dia',
       key: 'dia',
-      filters: diasSemana.map(dia => ({ text: dia, value: dia })),
-      onFilter: (value: any, record: Horario) => record.dia === value,
     },
     {
       title: 'Hora Inicio',
@@ -268,201 +91,289 @@ const AdminHorarios: React.FC = () => {
       key: 'hora_fin',
     },
     {
-      title: 'Tipo Clase',
+      title: 'Tipo de Clase',
       dataIndex: 'tipo_clase',
       key: 'tipo_clase',
-      filters: tiposClase.map(tipo => ({ text: tipo, value: tipo })),
-      onFilter: (value: any, record: Horario) => record.tipo_clase === value,
     },
     {
       title: 'Acciones',
       key: 'acciones',
       render: (_: any, record: Horario) => (
-        <Space size="middle">
-          <Button 
-            type="link" 
-            onClick={() => handleEdit(record)}
-          >
-            Editar
-          </Button>
-          <Button 
-            type="link" 
-            danger
-            onClick={() => handleDelete(record.id)}
-          >
-            Eliminar
-          </Button>
-        </Space>
+        <>
+          <Button type="link" onClick={() => handleEdit(record)}>Editar</Button>
+          <Button type="link" danger onClick={() => confirmDelete(record.id)}>Eliminar</Button>
+        </>
       ),
     },
   ];
 
-  // Define types for form fields
-  type FormField = {
-    name: string;
-    label: string;
-    type: 'select' | 'time' | 'text' | 'number';
-    options?: Array<{ value: any; label: string }>;
-    required: boolean;
+  // Modal states
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [editingHorario, setEditingHorario] = useState<HorarioFormValues | null>(null);
+  const [horarioToDelete, setHorarioToDelete] = useState<number | null>(null);
+
+  // Data fetching is now handled by the useHorariosData hook above
+
+  // Handle table change (pagination, filters, sorter)
+  const handleTableChange = useCallback((pagination: any) => {
+    if (pagination.current) {
+      setCurrentPage(pagination.current);
+    }
+    if (pagination.pageSize) {
+      setPageSize(pagination.pageSize);
+    }
+  }, []);
+
+  // Handle form submit
+  const handleSubmit = async (formValues: HorarioFormValues) => {
+    if (!formValues.fecha_clase) {
+      message.error('La fecha de la clase es requerida');
+      return;
+    }
+
+    try {
+      // Transform form values to match the API expected format
+      const values: HorarioFormData = {
+        aula_id: formValues.aula_id ? Number(formValues.aula_id) : 0,
+        curso_id: formValues.curso_id ? Number(formValues.curso_id) : 0,
+        profesor_id: formValues.profesor_id ? Number(formValues.profesor_id) : 0,
+        unidad_academica_id: formValues.unidad_academica_id ? Number(formValues.unidad_academica_id) : 1,
+        fecha_clase: formValues.fecha_clase.format('YYYY-MM-DD'),
+        hora_inicio: formValues.hora_inicio || '',
+        hora_fin: formValues.hora_fin || '',
+        tipo_clase: formValues.tipo_clase || 'Teoría',
+        dia: formValues.fecha_clase.format('dddd'),
+      };
+
+      if (editingHorario && editingHorario.id) {
+        // Update existing horario
+        await updateHorarioService(editingHorario.id, values);
+        message.success('Horario actualizado exitosamente');
+      } else {
+        // Create new horario
+        await createHorarioService(values);
+        message.success('Horario creado exitosamente');
+      }
+      
+      // Refresh data and close modal
+      await loadHorarios();
+      setIsEditModalOpen(false);
+      setEditingHorario(null);
+    } catch (error) {
+      console.error('Error saving horario:', error);
+      message.error('Error al guardar el horario');
+    }
   };
 
-  // Form fields configuration
-  const formFields: FormField[] = [
+  // Handle delete
+  const handleDelete = async () => {
+    if (!horarioToDelete) return;
+    
+    try {
+      await deleteHorarioService(horarioToDelete);
+      message.success('Horario eliminado exitosamente');
+      reloadData();
+    } catch (error) {
+      console.error('Error deleting horario:', error);
+      message.error('Error al eliminar el horario');
+    } finally {
+      setIsDeleteModalOpen(false);
+      setHorarioToDelete(null);
+    }
+  };
+
+  // Handle edit
+  const handleEdit = (horario: Horario | null) => {
+    if (horario) {
+      // Format the date for the form
+      const formattedHorario: HorarioFormValues = {
+        ...horario,
+        // Convert fecha_clase string to Day.js object if it exists, otherwise use current date
+        fecha_clase: horario.fecha_clase 
+          ? dayjs(horario.fecha_clase) 
+          : dayjs() // Fallback to current date if fecha_clase is not provided
+      };
+      setEditingHorario(formattedHorario);
+    } else {
+      // For new entries, set fecha_clase to current date
+      const newHorario: HorarioFormValues = {
+        aula_id: 0,
+        curso_id: 0,
+        profesor_id: 0,
+        unidad_academica_id: 1,
+        fecha_clase: dayjs(),
+        hora_inicio: '',
+        hora_fin: '',
+        tipo_clase: 'Teoría',
+        dia: ''
+      };
+      setEditingHorario(newHorario);
+    }
+    setIsEditModalOpen(true);
+  };
+
+  // Handle create new
+  const handleCreate = () => {
+    handleEdit(null);
+  };
+
+  // Handle delete confirmation
+  const confirmDelete = (id: number) => {
+    setHorarioToDelete(id);
+    setIsDeleteModalOpen(true);
+  };
+
+  // Define form fields for the modal with proper types
+  const formFields: Array<{
+    name: string;
+    label: string;
+    type: 'text' | 'select' | 'number' | 'date' | 'time';
+    required: boolean;
+    options?: Array<{ value: any; label: string }>;
+    format?: string;
+    showNow?: boolean;
+    minuteStep?: number;
+    inputReadOnly?: boolean;
+    loading?: boolean;
+  }> = [
     {
       name: 'aula_id',
       label: 'Aula',
-      type: 'select',
-      options: [
-        { value: 1, label: 'Aula 101' },
-        { value: 2, label: 'Aula 102' },
-      ],
-      required: true
+      type: 'select' as const,
+      required: true,
+      loading: aulas.length === 0,
+      options: aulas.length > 0 ? aulas.map((aula: any) => ({
+        value: aula.id,
+        label: aula.nombre || `Aula ${aula.id || ''}`
+      })) : [
+        { value: '', label: loading ? 'Cargando aulas...' : 'No hay aulas disponibles' }
+      ]
     },
     {
       name: 'curso_id',
       label: 'Curso',
-      type: 'select',
-      options: [
-        { value: 1, label: 'Matemáticas' },
-        { value: 2, label: 'Lenguaje' },
-      ],
-      required: true
+      type: 'select' as const,
+      required: true,
+      loading: cursos.length === 0,
+      options: cursos.length > 0 ? cursos.map((curso: any) => ({
+        value: curso.id,
+        label: curso.nombre || `Curso ${curso.id}`
+      })) : [
+        { value: '', label: loading ? 'Cargando cursos...' : 'No hay cursos disponibles' }
+      ]
     },
     {
       name: 'profesor_id',
       label: 'Profesor',
-      type: 'select',
-      options: [
-        { value: 1, label: 'Juan Pérez' },
-        { value: 2, label: 'María García' },
-      ],
-      required: true
+      type: 'select' as const,
+      required: true,
+options: profesores.map((profesor: any) => ({
+        value: profesor.id,
+        label: `${profesor.nombres} ${profesor.apellidos}`
+      }))
     },
     {
       name: 'unidad_academica_id',
       label: 'Unidad Académica',
-      type: 'select',
-      options: [
-        { value: 1, label: 'Facultad de Ingeniería' },
-        { value: 2, label: 'Facultad de Ciencias' },
-      ],
-      required: true
+      type: 'select' as const,
+      required: true,
+options: unidadesAcademicas.map((unidad: any) => ({
+        value: unidad.id,
+        label: unidad.nombre
+      }))
     },
     {
-      name: 'dia',
-      label: 'Día de la semana',
-      type: 'select',
-      options: diasSemana.map((dia: DiaSemana) => ({
-        value: dia,
-        label: dia
-      })),
-      required: true
-    },
-    {
-      name: 'tipo_clase',
-      label: 'Tipo de clase',
-      type: 'select',
-      options: tiposClase.map((tipo: TipoClase) => ({
-        value: tipo,
-        label: tipo
-      })),
-      required: true
+      name: 'fecha_clase',
+      label: 'Fecha de la Clase',
+      type: 'date' as const,
+      required: true,
+      format: 'YYYY-MM-DD'
     },
     {
       name: 'hora_inicio',
-      label: 'Hora de inicio',
-      type: 'text',
-      required: true
+      label: 'Hora de Inicio',
+      type: 'time' as const,
+      required: true,
+      format: 'HH:mm',
+      showNow: false,
+      minuteStep: 15,
+      inputReadOnly: true
     },
     {
       name: 'hora_fin',
-      label: 'Hora de fin',
-      type: 'text',
-      required: true
+      label: 'Hora de Fin',
+      type: 'time' as const,
+      required: true,
+      format: 'HH:mm',
+      showNow: false,
+      minuteStep: 15,
+      inputReadOnly: true
+    },
+    {
+      name: 'tipo_clase',
+      label: 'Tipo de Clase',
+      type: 'select' as const,
+      required: true,
+options: tiposClase.map((tipo: string) => ({
+        value: tipo,
+        label: tipo
+      }))
     }
   ];
 
   return (
-    <div className="p-4">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Administración de Horarios</h1>
-        <Button type="primary" onClick={handleNewHorario}>
-          Nuevo Horario
-        </Button>
-      </div>
-      {/* Modal de edición/creación */}
-      <EditModal
-        isVisible={isModalOpen}
-        onClose={handleCancel}
-        onSave={handleSave}
-        title={currentHorario ? 'Editar Horario' : 'Nuevo Horario'}
-        initialValues={currentHorario || {}}
-        loading={loading}
-        fields={formFields.map(field => ({
-          name: field.name,
-          label: field.label,
-          type: field.type as 'select' | 'text' | 'number' | 'date',
-          options: field.options,
-          required: field.required
-        }))}
-      />
-
-      {/* Modal de confirmación de eliminación */}
-      <ConfirmDelete
-        show={showDeleteModal}
-        onHide={() => setShowDeleteModal(false)}
-        onConfirm={handleDeleteConfirm}
-        title="Confirmar eliminación"
-        message="¿Estás seguro de que deseas eliminar este horario? Esta acción no se puede deshacer."
-        confirmText="Eliminar"
-        cancelText="Cancelar"
-      />
-
-      {/* Filtros */}
-      <div style={{ 
-        backgroundColor: 'white', 
-        borderRadius: '8px', 
-        padding: '24px', 
-        marginBottom: '24px' 
-      }}>
-        <h2 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '16px' }}>Filtros</h2>
-        <Form layout="inline" onValuesChange={(_, values) => setFiltros({ ...values })}>
-          <Form.Item name="dia" label="Día de la semana">
-            <Select
-              style={{ width: 200 }}
-              placeholder="Todos los días"
-              allowClear
-              onChange={(value) => setFiltros({ ...filtros, dia: value as DiaSemana })}
-              value={filtros.dia}
-            >
-              <Select.Option value="Lunes">Lunes</Select.Option>
-              <Select.Option value="Martes">Martes</Select.Option>
-              <Select.Option value="Miércoles">Miércoles</Select.Option>
-              <Select.Option value="Jueves">Jueves</Select.Option>
-              <Select.Option value="Viernes">Viernes</Select.Option>
-              <Select.Option value="Sábado">Sábado</Select.Option>
-              <Select.Option value="Domingo">Domingo</Select.Option>
-            </Select>
-          </Form.Item>
-        </Form>
-      </div>
-
-      {/* Tabla de horarios */}
-      <div style={{ marginTop: '24px' }}>
+    <div className="admin-horarios">
+      <Card
+        title="Gestión de Horarios"
+        extra={
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={handleCreate}
+          >
+            Nuevo Horario
+          </Button>
+        }
+      >
         <Table
           columns={columns}
           dataSource={horarios}
           rowKey="id"
-          pagination={{
-            current: paginaActual,
-            pageSize: tamanoPagina,
-            total,
-            onChange: (page: number) => setPaginaActual(page),
-            showSizeChanger: false
-          }}
           loading={loading}
+          pagination={{
+            current: paginationData.current,
+            pageSize: paginationData.pageSize,
+            total: paginationData.total,
+            showSizeChanger: true,
+            pageSizeOptions: ['10', '20', '50', '100']
+          }}
+          onChange={handleTableChange}
         />
-      </div>
+      </Card>
+
+      {/* Edit/Add Modal */}
+      <EditModal
+        isVisible={isEditModalOpen}
+        onClose={() => {
+          setIsEditModalOpen(false);
+          setEditingHorario(null);
+        }}
+        onSave={handleSubmit}
+        title={editingHorario ? 'Editar Horario' : 'Nuevo Horario'}
+        initialValues={editingHorario || {}}
+        fields={formFields}
+        loading={loading}
+      />
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmDelete
+        show={isDeleteModalOpen}
+        onHide={() => setIsDeleteModalOpen(false)}
+        onConfirm={handleDelete}
+        title="Eliminar Horario"
+        message="¿Estás seguro de que deseas eliminar este horario?"
+      />
     </div>
   );
 };

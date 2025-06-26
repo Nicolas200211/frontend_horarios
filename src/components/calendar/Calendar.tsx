@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { format, addDays, startOfWeek, isSameDay, parseISO } from 'date-fns';
+import { format, addDays, startOfWeek, isSameDay } from 'date-fns';
 import { es } from 'date-fns/locale';
 
 // Definición de tipos
@@ -22,7 +22,13 @@ const DAYS = Array.from({ length: 7 }, (_, i) => i); // 0-6 días de la semana
 
 export const Calendar: React.FC<CalendarProps> = ({ events = [] }) => {
   // Estado para la fecha de inicio de la semana y el día seleccionado
-  const [weekStart, setWeekStart] = useState<Date>(startOfWeek(new Date(), { locale: es }));
+  // Usamos weekStartsOn: 1 para que la semana empiece en lunes
+  const [weekStart, setWeekStart] = useState<Date>(
+    startOfWeek(new Date(), { 
+      locale: es,
+      weekStartsOn: 1 // Lunes es el primer día de la semana (1)
+    })
+  );
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
 
   // Navegación de la semana
@@ -39,22 +45,29 @@ export const Calendar: React.FC<CalendarProps> = ({ events = [] }) => {
   const goToToday = () => {
     const today = new Date();
     setSelectedDate(today);
-    setWeekStart(startOfWeek(today, { locale: es }));
+    setWeekStart(startOfWeek(today, { 
+      locale: es,
+      weekStartsOn: 1 // Lunes es el primer día de la semana (1)
+    }));
   };
 
   // Obtener eventos para un día y hora específicos
   const getEventsForDayAndHour = (day: Date, hour: number) => {
     return events.filter(event => {
       try {
-        const eventStart = parseISO(event.start);
-        const eventEnd = parseISO(event.end);
-        const targetDate = new Date(day);
-        targetDate.setHours(hour, 0, 0, 0);
+        const eventStart = new Date(event.start);
+        const eventEnd = new Date(event.end);
         
-        // Verificar si el evento está en curso durante esta hora
-        return isSameDay(eventStart, day) && 
-               eventStart.getHours() <= hour && 
-               eventEnd.getHours() >= hour;
+        // Check if the event occurs on this day
+        const isSameDay = eventStart.getDate() === day.getDate() && 
+                         eventStart.getMonth() === day.getMonth() && 
+                         eventStart.getFullYear() === day.getFullYear();
+        
+        // Check if the event is happening during this hour
+        const isDuringHour = (eventStart.getHours() <= hour && eventEnd.getHours() >= hour) ||
+                           (eventStart.getHours() === hour || eventEnd.getHours() === hour);
+        
+        return isSameDay && isDuringHour;
       } catch (e) {
         console.error('Error parsing event date:', e);
         return false;
@@ -68,6 +81,19 @@ export const Calendar: React.FC<CalendarProps> = ({ events = [] }) => {
       const day = addDays(weekStart, dayOffset);
       const isSelected = isSameDay(day, selectedDate);
       
+      // Get the day name in Spanish
+      const dayName = format(day, 'EEEE', { locale: es });
+      
+      // Verificar que el día de la semana sea correcto
+      const expectedDayIndex = (dayOffset + 1) % 7; // 1=Lunes, 2=Martes, ..., 6=Sabado, 0=Domingo
+      const currentDayIndex = day.getDay();
+      
+      // Si no coinciden, ajustar la fecha
+      if (currentDayIndex !== expectedDayIndex) {
+        const diff = (expectedDayIndex - currentDayIndex + 7) % 7;
+        day.setDate(day.getDate() + diff);
+      }
+      
       return (
         <div 
           key={dayOffset} 
@@ -77,7 +103,7 @@ export const Calendar: React.FC<CalendarProps> = ({ events = [] }) => {
           onClick={() => setSelectedDate(day)}
         >
           <div className="text-sm font-medium text-gray-600">
-            {format(day, 'EEE', { locale: es })}
+            {dayName.charAt(0).toUpperCase() + dayName.slice(1, 3)}
           </div>
           <div className={`text-lg font-semibold mt-1 w-8 h-8 flex items-center justify-center mx-auto rounded-full ${
             isSelected 

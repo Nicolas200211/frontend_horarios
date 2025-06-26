@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Enum, ForeignKey, Time, TIMESTAMP
+from sqlalchemy import Column, Integer, String, Enum, ForeignKey, Time, TIMESTAMP, Date
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from ..database import Base, engine
@@ -13,8 +13,12 @@ class Horario(Base):
     profesor_id = Column(Integer, ForeignKey('profesores.id'), nullable=False)
     unidad_academica_id = Column(Integer, ForeignKey('unidades_academicas.id'), nullable=False)
     
+    # Fecha exacta de la clase (nuevo campo)
+    fecha_clase = Column(Date, nullable=False)
+    
+    # Mantenemos el día para referencia (opcional)
     dia = Column(Enum('Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo', 
-                     name='dias_semana'), nullable=False)
+                     name='dias_semana'), nullable=True)
     hora_inicio = Column(Time, nullable=False)
     hora_fin = Column(Time, nullable=False)
     tipo_clase = Column(Enum('Teoría', 'Práctica', 'Laboratorio', 'Otro', 
