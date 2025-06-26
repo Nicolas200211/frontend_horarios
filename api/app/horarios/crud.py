@@ -46,8 +46,15 @@ def create_horario(db: Session, horario: schemas.HorarioCreate):
     if hora_inicio >= hora_fin:
         raise ValueError("La hora de inicio debe ser anterior a la hora de fin")
     
-    # Verificar que no haya superposición de horarios para el mismo aula
+    # Verificar que la fecha no sea en el pasado
+    from datetime import date as date_today
+    if horario.fecha_clase < date_today.today():
+        raise ValueError("No se pueden crear horarios en fechas pasadas")
+    
+    # Verificar que no haya superposición de horarios para el mismo aula en la misma fecha
     existing = db.query(models.Horario).filter(
+        models.Horario.aula_id == horario.aula_id,
+        models.Horario.fecha_clase == horario.fecha_clase,
         models.Horario.aula_id == horario.aula_id,
         models.Horario.dia == horario.dia,
         (
@@ -84,6 +91,7 @@ def create_horario(db: Session, horario: schemas.HorarioCreate):
             curso_id=horario.curso_id,
             profesor_id=horario.profesor_id,
             unidad_academica_id=horario.unidad_academica_id,
+            fecha_clase=horario.fecha_clase,
             dia=horario.dia,
             hora_inicio=hora_inicio,
             hora_fin=hora_fin,
@@ -125,14 +133,22 @@ def update_horario(db: Session, horario_id: int, horario: schemas.HorarioUpdate)
     if hora_inicio >= hora_fin:
         raise ValueError("La hora de inicio debe ser anterior a la hora de fin")
     
-    # Verificar superposición de horarios para el aula
-    dia = update_data.get('dia', db_horario.dia)
+    # Obtener valores actuales o nuevos
     aula_id = update_data.get('aula_id', db_horario.aula_id)
+    profesor_id = update_data.get('profesor_id', db_horario.profesor_id)
+    fecha_clase = update_data.get('fecha_clase', db_horario.fecha_clase)
     
+    # Verificar que la fecha no sea en el pasado si se está actualizando
+    if 'fecha_clase' in update_data:
+        from datetime import date as date_today
+        if fecha_clase < date_today.today():
+            raise ValueError("No se pueden actualizar horarios a fechas pasadas")
+    
+    # Verificar superposición de horarios para el aula en la misma fecha
     existing = db.query(models.Horario).filter(
         models.Horario.id != horario_id,
         models.Horario.aula_id == aula_id,
-        models.Horario.dia == dia,
+        models.Horario.fecha_clase == fecha_clase,
         (
             (models.Horario.hora_inicio <= hora_inicio) & 
             (models.Horario.hora_fin > hora_inicio) |
@@ -144,14 +160,13 @@ def update_horario(db: Session, horario_id: int, horario: schemas.HorarioUpdate)
     ).first()
     
     if existing:
-        raise ValueError("El aula ya está ocupada en ese horario")
+        raise ValueError("El aula ya está ocupada en ese horario y fecha")
     
-    # Verificar que el profesor no tenga otro curso en el mismo horario
-    profesor_id = update_data.get('profesor_id', db_horario.profesor_id)
+    # Verificar que el profesor no tenga otro curso en el mismo horario y fecha
     profesor_ocupado = db.query(models.Horario).filter(
         models.Horario.id != horario_id,
         models.Horario.profesor_id == profesor_id,
-        models.Horario.dia == dia,
+        models.Horario.fecha_clase == fecha_clase,
         (
             (models.Horario.hora_inicio <= hora_inicio) & 
             (models.Horario.hora_fin > hora_inicio) |

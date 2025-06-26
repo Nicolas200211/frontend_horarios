@@ -1,5 +1,10 @@
 import type { Horario } from '../admin/admin_horarios/types';
-import type { CalendarEvent } from '../components/calendar/Calendar';
+import type { CalendarEvent as BaseCalendarEvent } from '../components/calendar/Calendar';
+
+// Extend the base CalendarEvent type to include rawData
+interface CalendarEvent extends BaseCalendarEvent {
+  rawData?: Horario;
+}
 
 const COLORS = [
   'bg-blue-100 border-l-4 border-blue-500',
@@ -12,53 +17,35 @@ const COLORS = [
 
 // Mapeo de nombres de días a números de día de la semana (0-6, donde 0 es domingo)
 const DAYS_MAP: Record<string, number> = {
-  'domingo': 0,
-  'lunes': 1,
-  'martes': 2,
-  'miércoles': 3,
-  'jueves': 4,
-  'viernes': 5,
-  'sábado': 6,
+  'domingo': 0,    // 0
+  'lunes': 1,       // 1
+  'martes': 2,      // 2
+  'miércoles': 3,   // 3
+  'miercoles': 3,   // 3 - Alternative spelling without accent
+  'jueves': 4,      // 4
+  'viernes': 5,     // 5
+  'sábado': 6,      // 6
+  'sabado': 6       // 6 - Alternative spelling without accent
 };
 
-// Helper function to format date string to YYYY-MM-DD format
-const formatDateString = (dateStr: string): string => {
-  if (!dateStr) return '';
+// Helper function to get the next occurrence of a day of the week
+const getNextDayOfWeek = (dayName: string, referenceDate: Date = new Date()): Date => {
+  const dayIndex = DAYS_MAP[dayName.toLowerCase().trim()];
+  if (dayIndex === undefined) return new Date();
   
-  // If it's already in YYYY-MM-DD format, return as is
-  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-    return dateStr;
+  const result = new Date(referenceDate);
+  result.setHours(0, 0, 0, 0);
+  
+  const currentDay = referenceDate.getDay();
+  let daysToAdd = (dayIndex - currentDay + 7) % 7;
+  
+  // If it's the same day, show next week's occurrence
+  if (daysToAdd === 0 && referenceDate > new Date()) {
+    daysToAdd = 7;
   }
   
-  // Check if it's a day name
-  const dayName = dateStr.toLowerCase().trim();
-  if (dayName in DAYS_MAP) {
-    const today = new Date();
-    const currentDay = today.getDay();
-    const targetDay = DAYS_MAP[dayName];
-    
-    // Calculate the next occurrence of this day
-    const diff = (targetDay + 7 - currentDay) % 7 || 7;
-    const nextDay = new Date(today);
-    nextDay.setDate(today.getDate() + diff);
-    
-    const year = nextDay.getFullYear();
-    const month = String(nextDay.getMonth() + 1).padStart(2, '0');
-    const day = String(nextDay.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  }
-  
-  // Try to parse other date formats if needed
-  const date = new Date(dateStr);
-  if (!isNaN(date.getTime())) {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  }
-  
-  console.error('Invalid date format:', dateStr);
-  return '';
+  result.setDate(referenceDate.getDate() + daysToAdd);
+  return result;
 };
 
 // Helper function to ensure time is in HH:MM format
@@ -79,18 +66,40 @@ export const mapHorarioToCalendarEvent = (horario: Horario): CalendarEvent => {
   // Get a consistent color based on the curso ID or use a default
   const colorIndex = horario.curso_id ? horario.curso_id % COLORS.length : 0;
   
-  const formattedDate = formatDateString(horario.dia);
+  // Use fecha_clase if available, otherwise fall back to dia for backward compatibility
+  const eventDate = horario.fecha_clase 
+    ? new Date(horario.fecha_clase) 
+    : getNextDayOfWeek(horario.dia || 'lunes');
+    
   const startTime = formatTimeString(horario.hora_inicio);
   const endTime = formatTimeString(horario.hora_fin);
   
+  // Parse hours and minutes from time strings
+  const [startHour, startMinute] = startTime.split(':').map(Number);
+  const [endHour, endMinute] = endTime.split(':').map(Number);
+  
+  // Set the time for the event date
+  const startDateTime = new Date(eventDate);
+  startDateTime.setHours(startHour, startMinute, 0, 0);
+  
+  const endDateTime = new Date(eventDate);
+  endDateTime.setHours(endHour, endMinute, 0, 0);
+  
+  // Format the date parts from the eventDate
+  const year = eventDate.getFullYear();
+  const month = String(eventDate.getMonth() + 1).padStart(2, '0');
+  const day = String(eventDate.getDate()).padStart(2, '0');
+  
+  // Create the event with proper date formatting
   return {
     id: horario.id,
-    title: horario.curso?.nombre || 'Sin nombre',
-    start: formattedDate ? `${formattedDate}T${startTime}` : new Date().toISOString(),
-    end: formattedDate ? `${formattedDate}T${endTime}` : new Date().toISOString(),
-    teacher: horario.profesor?.nombres || 'Sin profesor',
-    room: horario.aula?.codigo || 'Sin aula',
+    title: horario.curso?.nombre || `Curso ${horario.curso_id}`,
+    start: `${year}-${month}-${day}T${startTime}`,
+    end: `${year}-${month}-${day}T${endTime}`,
+    teacher: horario.profesor ? `${horario.profesor.nombres} ${horario.profesor.apellidos}` : 'Sin profesor',
+    room: horario.aula?.nombre || `Aula ${horario.aula_id}`,
     color: COLORS[colorIndex],
+    rawData: horario // Include the raw data for reference
   };
 };
 
