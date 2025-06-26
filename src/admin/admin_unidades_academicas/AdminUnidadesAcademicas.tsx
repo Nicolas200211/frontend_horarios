@@ -3,13 +3,9 @@ import {
   Table, 
   Button, 
   Space, 
-  Modal, 
-  Form, 
-  Input, 
-  message, 
-  Popconfirm, 
   Card, 
-  Typography 
+  Typography, 
+  message 
 } from 'antd';
 import { 
   PlusOutlined, 
@@ -23,6 +19,8 @@ import {
   deleteUnidadAcademica,
   type UnidadAcademica 
 } from './unidadesAcademicasService';
+import EditModal from '../../components/modals/EditModal';
+import ConfirmDelete from '../../components/modals/ConfirmDelete';
 
 const { Title } = Typography;
 
@@ -30,8 +28,10 @@ const AdminUnidadesAcademicas: React.FC = () => {
   const [unidades, setUnidades] = useState<UnidadAcademica[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [modalVisible, setModalVisible] = useState<boolean>(false);
+  const [confirmDeleteVisible, setConfirmDeleteVisible] = useState<boolean>(false);
   const [editingUnidad, setEditingUnidad] = useState<UnidadAcademica | null>(null);
-  const [form] = Form.useForm();
+  const [unidadToDelete, setUnidadToDelete] = useState<number | null>(null);
+  const [formValues, setFormValues] = useState<Partial<UnidadAcademica>>({});
 
   useEffect(() => {
     fetchUnidadesAcademicas();
@@ -56,32 +56,40 @@ const AdminUnidadesAcademicas: React.FC = () => {
   };
 
   const handleCreate = () => {
-    form.resetFields();
+    setFormValues({});
     setEditingUnidad(null);
     setModalVisible(true);
   };
 
   const handleEdit = (record: UnidadAcademica) => {
-    form.setFieldsValue(record);
+    setFormValues(record);
     setEditingUnidad(record);
     setModalVisible(true);
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDeleteClick = (id: number) => {
+    setUnidadToDelete(id);
+    setConfirmDeleteVisible(true);
+  };
+
+  const handleDelete = async () => {
+    if (!unidadToDelete) return;
+    
     try {
-      await deleteUnidadAcademica(id);
+      await deleteUnidadAcademica(unidadToDelete);
       message.success('Unidad académica eliminada correctamente');
       fetchUnidadesAcademicas();
     } catch (error) {
       message.error('Error al eliminar la unidad académica');
       console.error('Error:', error);
+    } finally {
+      setConfirmDeleteVisible(false);
+      setUnidadToDelete(null);
     }
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (values: any) => {
     try {
-      const values = await form.validateFields();
-      
       if (editingUnidad) {
         await updateUnidadAcademica(editingUnidad.id!, values);
         message.success('Unidad académica actualizada correctamente');
@@ -99,6 +107,30 @@ const AdminUnidadesAcademicas: React.FC = () => {
       }
     }
   };
+
+  const formFields = [
+    {
+      name: 'codigo',
+      label: 'Código',
+      type: 'text' as const,
+      placeholder: 'Ej: CC',
+      required: true
+    },
+    {
+      name: 'nombre',
+      label: 'Nombre',
+      type: 'text' as const,
+      placeholder: 'Ej: Colegio Cybernet',
+      required: true
+    },
+    {
+      name: 'descripcion',
+      label: 'Descripción',
+      type: 'text' as const,
+      placeholder: 'Descripción de la unidad académica',
+      required: false
+    }
+  ];
 
   const columns = [
     {
@@ -126,15 +158,15 @@ const AdminUnidadesAcademicas: React.FC = () => {
             type="text" 
             icon={<EditOutlined />} 
             onClick={() => handleEdit(record)}
+            aria-label="Editar"
           />
-          <Popconfirm
-            title="¿Estás seguro de eliminar esta unidad académica?"
-            onConfirm={() => handleDelete(record.id!)}
-            okText="Sí"
-            cancelText="No"
-          >
-            <Button type="text" danger icon={<DeleteOutlined />} />
-          </Popconfirm>
+          <Button 
+            type="text" 
+            danger 
+            icon={<DeleteOutlined />} 
+            onClick={() => handleDeleteClick(record.id!)}
+            aria-label="Eliminar"
+          />
         </Space>
       ),
     },
@@ -163,50 +195,25 @@ const AdminUnidadesAcademicas: React.FC = () => {
         />
       </Card>
 
-      <Modal
+      <EditModal
+        isVisible={modalVisible}
+        onClose={() => setModalVisible(false)}
+        onSave={handleSubmit}
         title={editingUnidad ? 'Editar Unidad Académica' : 'Nueva Unidad Académica'}
-        open={modalVisible}
-        onOk={handleSubmit}
-        onCancel={() => setModalVisible(false)}
-        confirmLoading={loading}
-        width={600}
-      >
-        <Form
-          form={form}
-          layout="vertical"
-          initialValues={editingUnidad || {}}
-        >
-          <Form.Item
-            name="codigo"
-            label="Código"
-            rules={[
-              { required: true, message: 'Por favor ingrese el código' },
-              { max: 10, message: 'Máximo 10 caracteres' }
-            ]}
-          >
-            <Input placeholder="Ej: CC" />
-          </Form.Item>
-          
-          <Form.Item
-            name="nombre"
-            label="Nombre"
-            rules={[
-              { required: true, message: 'Por favor ingrese el nombre' },
-              { max: 100, message: 'Máximo 100 caracteres' }
-            ]}
-          >
-            <Input placeholder="Ej: Colegio Cybernet" />
-          </Form.Item>
-          
-          <Form.Item
-            name="descripcion"
-            label="Descripción"
-            rules={[{ max: 500, message: 'Máximo 500 caracteres' }]}
-          >
-            <Input.TextArea rows={4} placeholder="Descripción de la unidad académica" />
-          </Form.Item>
-        </Form>
-      </Modal>
+        fields={formFields}
+        initialValues={formValues}
+        loading={loading}
+      />
+
+      <ConfirmDelete
+        show={confirmDeleteVisible}
+        onHide={() => setConfirmDeleteVisible(false)}
+        onConfirm={handleDelete}
+        title="Confirmar eliminación"
+        message="¿Estás seguro de eliminar esta unidad académica? Esta acción no se puede deshacer."
+        confirmText="Eliminar"
+        cancelText="Cancelar"
+      />
     </div>
   );
 };

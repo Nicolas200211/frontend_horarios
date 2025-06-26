@@ -50,7 +50,8 @@ def actualizar_profesor(
     """
     Actualiza un profesor existente.
     """
-    db_profesor = crud.get_profesor(db, profesor_id=profesor_id)
+    # Get the database model instance directly
+    db_profesor = db.query(models.Profesor).filter(models.Profesor.id == profesor_id).first()
     if db_profesor is None:
         raise HTTPException(status_code=404, detail="Profesor no encontrado")
     return crud.update_profesor(db=db, db_profesor=db_profesor, profesor=profesor)
@@ -60,7 +61,8 @@ def eliminar_profesor(profesor_id: int, db: Session = Depends(get_db)):
     """
     Elimina un profesor por su ID.
     """
-    db_profesor = crud.get_profesor(db, profesor_id=profesor_id)
+    # Get the database model instance directly
+    db_profesor = db.query(models.Profesor).filter(models.Profesor.id == profesor_id).first()
     if db_profesor is None:
         raise HTTPException(status_code=404, detail="Profesor no encontrado")
     crud.delete_profesor(db=db, profesor_id=profesor_id)

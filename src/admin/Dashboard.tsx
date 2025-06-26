@@ -19,9 +19,11 @@ const Dashboard: React.FC<DashboardProps> = () => {
       try {
         console.log('Fetching horarios...');
         setLoading(true);
-        const horarios = await getHorarios();
-        console.log('Horarios from API:', horarios);
+        const response = await getHorarios();
+        console.log('Horarios from API:', response);
         
+        // Extract the items array from the response
+        const horarios = response.items || [];
         const calendarEvents = mapHorariosToCalendarEvents(horarios);
         console.log('Mapped calendar events:', calendarEvents);
         

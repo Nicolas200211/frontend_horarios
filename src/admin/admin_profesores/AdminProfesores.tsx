@@ -235,20 +235,23 @@ const AdminProfesores: React.FC = () => {
         </Spin>
       </Card>
 
-      <EditModal
-        isVisible={modalVisible}
-        onClose={() => setModalVisible(false)}
-        onSave={handleSubmit}
-        title={currentProfesor ? 'Editar Profesor' : 'Nuevo Profesor'}
-        initialValues={currentProfesor || undefined}
-        fields={formFields}
-      />
+      {modalVisible && (
+        <EditModal
+          title={currentProfesor ? 'Editar Profesor' : 'Nuevo Profesor'}
+          isVisible={modalVisible}
+          onClose={() => setModalVisible(false)}
+          onSave={handleSubmit}
+          fields={formFields}
+          loading={loading}
+          initialValues={currentProfesor || {}}
+        />
+      )}
 
       <ConfirmDelete
         show={deleteModalVisible}
         onHide={() => setDeleteModalVisible(false)}
         onConfirm={handleConfirmDelete}
-        title="Confirmar eliminación"
+        title="Eliminar Profesor"
         message={`¿Estás seguro de que deseas eliminar al profesor ${currentProfesor?.nombres} ${currentProfesor?.apellidos}?`}
       />
     </div>

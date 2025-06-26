@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Space, Tag, Card, Spin, Form, Input, InputNumber, Select, Switch, Modal } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, ExclamationCircleFilled } from '@ant-design/icons';
+import { Table, Button, Space, Tag, Card, Spin } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { Aula, UnidadAcademica, Curso, Profesor } from './types';
 import { getAulas, createAula, updateAula, deleteAula } from './aulasService';
 import { getUnidadesAcademicas } from '../admin_unidades_academicas/unidadesAcademicasService';
 import { getCursos } from '../admin_cursos/cursosService';
 import { getProfesores } from '../admin_profesores/profesoresService';
 import { showSuccess, showError } from '../../components/notifications/Notifications';
+import EditModal from '../../components/modals/EditModal';
+import ConfirmDelete from '../../components/modals/ConfirmDelete';
 
-const { confirm } = Modal;
-const { Option } = Select;
+
 
 const AdminAulas: React.FC = () => {
   const [aulas, setAulas] = useState<Aula[]>([]);
@@ -19,7 +20,8 @@ const AdminAulas: React.FC = () => {
   const [unidadesAcademicas, setUnidadesAcademicas] = useState<UnidadAcademica[]>([]);
   const [cursos, setCursos] = useState<Curso[]>([]);
   const [profesores, setProfesores] = useState<Profesor[]>([]);
-  const [form] = Form.useForm();
+  const [formValues, setFormValues] = useState<Partial<Aula>>({ activo: true, tipo: 'Teoría' });
+  const [confirmDeleteVisible, setConfirmDeleteVisible] = useState<boolean>(false);
 
   const fetchAulas = async () => {
     try {
@@ -61,13 +63,13 @@ const AdminAulas: React.FC = () => {
 
   const handleAddAula = () => {
     setCurrentAula(null);
-    form.resetFields();
+    setFormValues({ activo: true, tipo: 'Teoría' });
     setModalVisible(true);
   };
 
   const handleEditAula = (aula: Aula) => {
     setCurrentAula(aula);
-    form.setFieldsValue({
+    setFormValues({
       ...aula,
       curso_id: aula.curso_id || undefined,
       profesor_id: aula.profesor_id || undefined,
@@ -75,32 +77,29 @@ const AdminAulas: React.FC = () => {
     setModalVisible(true);
   };
 
-  const handleDeleteAula = (id: number) => {
-    confirm({
-      title: '¿Está seguro de eliminar este aula?',
-      icon: <ExclamationCircleFilled />,
-      content: 'Esta acción no se puede deshacer',
-      okText: 'Sí, eliminar',
-      okType: 'danger',
-      cancelText: 'Cancelar',
-      onOk: async () => {
-        try {
-          await deleteAula(id);
-          await fetchAulas();
-          showSuccess('Aula eliminada', 'El aula ha sido eliminada correctamente');
-        } catch (error) {
-          console.error('Error al eliminar el aula:', error);
-          const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
-          showError('Error al eliminar el aula', errorMessage);
-        }
-      },
-    });
+  const handleDeleteClick = (aula: Aula) => {
+    setCurrentAula(aula);
+    setConfirmDeleteVisible(true);
   };
 
-  const handleSubmit = async () => {
+  const handleDeleteAula = async () => {
+    if (!currentAula) return;
+    
     try {
-      const values = await form.validateFields();
-      
+      await deleteAula(currentAula.id);
+      await fetchAulas();
+      showSuccess('Aula eliminada', 'El aula ha sido eliminada correctamente');
+    } catch (error) {
+      console.error('Error al eliminar el aula:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+      showError('Error al eliminar el aula', errorMessage);
+    } finally {
+      setConfirmDeleteVisible(false);
+    }
+  };
+
+  const handleSubmit = async (values: any) => {
+    try {
       if (currentAula) {
         await updateAula(currentAula.id, values);
         showSuccess('Aula actualizada', 'El aula ha sido actualizada correctamente');
@@ -117,6 +116,79 @@ const AdminAulas: React.FC = () => {
       showError('Error al guardar el aula', errorMessage);
     }
   };
+
+  const formFields = [
+    {
+      name: 'codigo',
+      label: 'Código',
+      type: 'text' as const,
+      placeholder: 'Ej: AULA-101',
+      required: true
+    },
+    {
+      name: 'nombre',
+      label: 'Nombre',
+      type: 'text' as const,
+      placeholder: 'Ej: Laboratorio de Informática 1',
+      required: true
+    },
+    {
+      name: 'capacidad',
+      label: 'Capacidad',
+      type: 'number' as const,
+      required: true,
+      min: 1
+    },
+    {
+      name: 'tipo',
+      label: 'Tipo de Aula',
+      type: 'select' as const,
+      required: true,
+      options: [
+        { value: 'Teoría', label: 'Teoría' },
+        { value: 'Laboratorio', label: 'Laboratorio' },
+        { value: 'Taller', label: 'Taller' },
+        { value: 'Otro', label: 'Otro' }
+      ]
+    },
+    {
+      name: 'unidad_academica_id',
+      label: 'Unidad Académica',
+      type: 'select' as const,
+      required: true,
+      options: unidadesAcademicas.map(ua => ({
+        value: ua.id,
+        label: `${ua.nombre} (${ua.codigo})`
+      })) as {value: any, label: string}[]
+    },
+    {
+      name: 'curso_id',
+      label: 'Curso (Opcional)',
+      type: 'select' as const,
+      options: cursos.map(curso => ({
+        value: curso.id,
+        label: `${curso.nombre} (${curso.codigo})`
+      })) as {value: any, label: string}[]
+    },
+    {
+      name: 'profesor_id',
+      label: 'Profesor (Opcional)',
+      type: 'select' as const,
+      options: profesores.map(prof => ({
+        value: prof.id,
+        label: `${prof.nombres} ${prof.apellidos}`
+      })) as {value: any, label: string}[]
+    },
+    {
+      name: 'activo',
+      label: 'Activo',
+      type: 'select' as const,
+      options: [
+        { value: true, label: 'Activo' },
+        { value: false, label: 'Inactivo' }
+      ]
+    }
+  ];
 
   const columns = [
     {
@@ -184,7 +256,7 @@ const AdminAulas: React.FC = () => {
             icon={<DeleteOutlined />}
             onClick={(e) => {
               e.stopPropagation();
-              handleDeleteAula(record.id);
+              handleDeleteClick(record);
             }}
           />
         </Space>
@@ -217,121 +289,25 @@ const AdminAulas: React.FC = () => {
         </Spin>
       </Card>
 
-      <Modal
+      <EditModal
+        isVisible={modalVisible}
+        onClose={() => setModalVisible(false)}
+        onSave={handleSubmit}
         title={currentAula ? 'Editar Aula' : 'Nueva Aula'}
-        open={modalVisible}
-        onOk={handleSubmit}
-        onCancel={() => setModalVisible(false)}
-        width={700}
-        okText={currentAula ? 'Actualizar' : 'Crear'}
+        fields={formFields}
+        initialValues={formValues}
+        loading={loading}
+      />
+
+      <ConfirmDelete
+        show={confirmDeleteVisible}
+        onHide={() => setConfirmDeleteVisible(false)}
+        onConfirm={handleDeleteAula}
+        title="Confirmar eliminación"
+        message={`¿Está seguro de eliminar el aula "${currentAula?.nombre}"? Esta acción no se puede deshacer.`}
+        confirmText="Eliminar"
         cancelText="Cancelar"
-        destroyOnClose
-      >
-        <Form
-          form={form}
-          layout="vertical"
-          initialValues={{
-            activo: true,
-            tipo: 'Teoría',
-          }}
-        >
-          <Form.Item
-            name="codigo"
-            label="Código"
-            rules={[{ required: true, message: 'Por favor ingrese el código del aula' }]}
-          >
-            <Input placeholder="Ej: AULA-101" />
-          </Form.Item>
-
-          <Form.Item
-            name="nombre"
-            label="Nombre"
-            rules={[{ required: true, message: 'Por favor ingrese el nombre del aula' }]}
-          >
-            <Input placeholder="Ej: Laboratorio de Informática 1" />
-          </Form.Item>
-
-          <Form.Item
-            name="capacidad"
-            label="Capacidad"
-            rules={[
-              { required: true, message: 'Por favor ingrese la capacidad' },
-              { type: 'number', min: 1, message: 'La capacidad debe ser mayor a 0' },
-            ]}
-          >
-            <InputNumber min={1} style={{ width: '100%' }} />
-          </Form.Item>
-
-          <Form.Item
-            name="tipo"
-            label="Tipo de Aula"
-            rules={[{ required: true, message: 'Por favor seleccione el tipo de aula' }]}
-          >
-            <Select>
-              <Option value="Teoría">Teoría</Option>
-              <Option value="Laboratorio">Laboratorio</Option>
-              <Option value="Taller">Taller</Option>
-              <Option value="Otro">Otro</Option>
-            </Select>
-          </Form.Item>
-
-          <Form.Item
-            name="unidad_academica_id"
-            label="Unidad Académica"
-            rules={[{ required: true, message: 'Por favor seleccione la unidad académica' }]}
-          >
-            <Select loading={unidadesAcademicas.length === 0}>
-              {unidadesAcademicas.map((ua) => (
-                <Option key={ua.id} value={ua.id}>
-                  {ua.nombre} ({ua.codigo})
-                </Option>
-              ))}
-            </Select>
-          </Form.Item>
-
-          <Form.Item name="curso_id" label="Curso (Opcional)">
-            <Select
-              allowClear
-              showSearch
-              optionFilterProp="children"
-              filterOption={(input, option) => {
-                if (!option || !option.children) return false;
-                return String(option.children).toLowerCase().includes(input.toLowerCase());
-              }}
-              loading={cursos.length === 0}
-            >
-              {cursos.map((curso) => (
-                <Option key={curso.id} value={curso.id}>
-                  {curso.nombre} ({curso.codigo})
-                </Option>
-              ))}
-            </Select>
-          </Form.Item>
-
-          <Form.Item name="profesor_id" label="Profesor (Opcional)">
-            <Select
-              allowClear
-              showSearch
-              optionFilterProp="children"
-              filterOption={(input, option) => {
-                if (!option || !option.children) return false;
-                return String(option.children).toLowerCase().includes(input.toLowerCase());
-              }}
-              loading={profesores.length === 0}
-            >
-              {profesores.map((profesor) => (
-                <Option key={profesor.id} value={profesor.id}>
-                  {profesor.nombres} {profesor.apellidos}
-                </Option>
-              ))}
-            </Select>
-          </Form.Item>
-
-          <Form.Item name="activo" valuePropName="checked" label="Activo">
-            <Switch />
-          </Form.Item>
-        </Form>
-      </Modal>
+      />
     </div>
   );
 };

@@ -1,21 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Space, Tag, Card, Spin, Form, Input, InputNumber, Select, Switch, Modal } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, ExclamationCircleFilled } from '@ant-design/icons';
+import { Table, Button, Space, Tag, Card, Spin } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { Curso } from './types';
 import { getCursos, createCurso, updateCurso, deleteCurso } from './cursosService';
 import { getProfesores } from '../admin_profesores/profesoresService';
 import { getUnidadesAcademicas } from '../admin_unidades_academicas/unidadesAcademicasService';
 import { showSuccess, showError } from '../../components/notifications/Notifications';
+import EditModal from '../../components/modals/EditModal';
+import ConfirmDelete from '../../components/modals/ConfirmDelete';
 
 const AdminCursos: React.FC = () => {
   const [cursos, setCursos] = useState<Curso[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [modalVisible, setModalVisible] = useState<boolean>(false);
-
-  const [currentCurso, setCurrentCurso] = useState<Curso | null>(null) as any;
+  const [currentCurso, setCurrentCurso] = useState<Curso | null>(null);
   const [unidadesAcademicas, setUnidadesAcademicas] = useState<{id: number, nombre: string}[]>([]);
   const [profesores, setProfesores] = useState<{id: number, nombre: string}[]>([]);
-  const [form] = Form.useForm();
+  const [formValues, setFormValues] = useState<Partial<Curso>>({});
+  const [modalVisible, setModalVisible] = useState<boolean>(false);
+  const [confirmDeleteVisible, setConfirmDeleteVisible] = useState<boolean>(false);
 
   const fetchCursos = async () => {
     try {
@@ -71,13 +73,13 @@ const AdminCursos: React.FC = () => {
 
   const handleCreate = () => {
     setCurrentCurso(null);
-    form.resetFields();
+    setFormValues({ activo: true });
     setModalVisible(true);
   };
 
   const handleEdit = (curso: Curso) => {
     setCurrentCurso(curso);
-    form.setFieldsValue({
+    setFormValues({
       ...curso,
       unidad_academica_id: curso.unidad_academica?.id,
       profesor_id: curso.profesor?.id
@@ -87,13 +89,11 @@ const AdminCursos: React.FC = () => {
 
   const handleDelete = (curso: Curso) => {
     setCurrentCurso(curso);
-    handleConfirmDelete();
+    setConfirmDeleteVisible(true);
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (values: any) => {
     try {
-      const values = form.getFieldsValue();
-      
       if (currentCurso) {
         await updateCurso(currentCurso.id, values);
         showSuccess('Curso actualizado', 'El curso se ha actualizado correctamente');
@@ -113,25 +113,78 @@ const AdminCursos: React.FC = () => {
   const handleConfirmDelete = async () => {
     if (!currentCurso) return;
     
-    Modal.confirm({
-      title: '¿Está seguro que desea eliminar este curso?',
-      icon: <ExclamationCircleFilled />,
-      content: `El curso "${currentCurso.nombre}" será eliminado permanentemente.`,
-      okText: 'Sí, eliminar',
-      okType: 'danger',
-      cancelText: 'Cancelar',
-      onOk: async () => {
-        try {
-          await deleteCurso(currentCurso.id);
-          showSuccess('Curso eliminado', 'El curso se ha eliminado correctamente');
-          fetchCursos();
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
-          showError('Error al eliminar el curso', errorMessage);
-        }
-      },
-    });
+    try {
+      await deleteCurso(currentCurso.id);
+      showSuccess('Curso eliminado', 'El curso se ha eliminado correctamente');
+      fetchCursos();
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+      showError('Error al eliminar el curso', errorMessage);
+    } finally {
+      setConfirmDeleteVisible(false);
+    }
   };
+
+  const formFields = [
+    {
+      name: 'codigo',
+      label: 'Código',
+      type: 'text' as const,
+      placeholder: 'Código del curso',
+      required: true
+    },
+    {
+      name: 'nombre',
+      label: 'Nombre',
+      type: 'text' as const,
+      placeholder: 'Nombre del curso',
+      required: true
+    },
+    {
+      name: 'descripcion',
+      label: 'Descripción',
+      type: 'text' as const,
+      placeholder: 'Descripción del curso'
+    },
+    {
+      name: 'creditos',
+      label: 'Créditos',
+      type: 'number' as const,
+      required: true
+    },
+    {
+      name: 'horas_teoria',
+      label: 'Horas Teoría',
+      type: 'number' as const,
+      required: true
+    },
+    {
+      name: 'horas_practica',
+      label: 'Horas Práctica',
+      type: 'number' as const,
+      required: true
+    },
+    {
+      name: 'unidad_academica_id',
+      label: 'Unidad Académica',
+      type: 'select' as const,
+      required: true,
+      options: unidadesAcademicas.map(u => ({
+        value: u.id,
+        label: u.nombre
+  })) as {value: any, label: string}[]
+    },
+    {
+      name: 'profesor_id',
+      label: 'Profesor',
+      type: 'select' as const,
+      required: true,
+      options: profesores.map(p => ({
+        value: p.id,
+        label: p.nombre
+      })) as {value: any, label: string}[]
+    }
+  ];
 
   const columns = [
     {
@@ -230,103 +283,25 @@ const AdminCursos: React.FC = () => {
         </Spin>
       </Card>
 
-<Modal
+      <EditModal
+        isVisible={modalVisible}
+        onClose={() => setModalVisible(false)}
+        onSave={handleSubmit}
         title={currentCurso ? 'Editar Curso' : 'Nuevo Curso'}
-        open={modalVisible}
-        onOk={handleSubmit}
-        onCancel={() => setModalVisible(false)}
-        confirmLoading={loading}
-        width={800}
-      >
-        <Form
-          form={form}
-          layout="vertical"
-          initialValues={{ activo: true }}
-        >
-          <Form.Item
-            name="codigo"
-            label="Código"
-            rules={[{ required: true, message: 'Por favor ingrese el código del curso' }]}
-          >
-            <Input />
-          </Form.Item>
-          
-          <Form.Item
-            name="nombre"
-            label="Nombre"
-            rules={[{ required: true, message: 'Por favor ingrese el nombre del curso' }]}
-          >
-            <Input />
-          </Form.Item>
-          
-          <Form.Item
-            name="descripcion"
-            label="Descripción"
-          >
-            <Input.TextArea rows={4} />
-          </Form.Item>
-          
-          <Form.Item
-            name="creditos"
-            label="Créditos"
-            rules={[{ required: true, message: 'Por favor ingrese los créditos' }]}
-          >
-            <InputNumber min={0} style={{ width: '100%' }} />
-          </Form.Item>
-          
-          <Form.Item
-            name="horas_teoria"
-            label="Horas Teoría"
-            rules={[{ required: true, message: 'Por favor ingrese las horas de teoría' }]}
-          >
-            <InputNumber min={0} style={{ width: '100%' }} />
-          </Form.Item>
-          
-          <Form.Item
-            name="horas_practica"
-            label="Horas Práctica"
-            rules={[{ required: true, message: 'Por favor ingrese las horas de práctica' }]}
-          >
-            <InputNumber min={0} style={{ width: '100%' }} />
-          </Form.Item>
-          
-          <Form.Item
-            name="unidad_academica_id"
-            label="Unidad Académica"
-            rules={[{ required: true, message: 'Por favor seleccione la unidad académica' }]}
-          >
-            <Select placeholder="Seleccione una unidad académica">
-              {unidadesAcademicas.map(u => (
-                <Select.Option key={u.id} value={u.id}>
-                  {u.nombre}
-                </Select.Option>
-              ))}
-            </Select>
-          </Form.Item>
-          
-          <Form.Item
-            name="profesor_id"
-            label="Profesor"
-            rules={[{ required: true, message: 'Por favor seleccione el profesor' }]}
-          >
-            <Select placeholder="Seleccione un profesor">
-              {profesores.map(p => (
-                <Select.Option key={p.id} value={p.id}>
-                  {p.nombre}
-                </Select.Option>
-              ))}
-            </Select>
-          </Form.Item>
-          
-          <Form.Item
-            name="activo"
-            label="Activo"
-            valuePropName="checked"
-          >
-            <Switch />
-          </Form.Item>
-        </Form>
-      </Modal>
+        fields={formFields}
+        initialValues={formValues}
+        loading={loading}
+      />
+
+      <ConfirmDelete
+        show={confirmDeleteVisible}
+        onHide={() => setConfirmDeleteVisible(false)}
+        onConfirm={handleConfirmDelete}
+        title="Confirmar eliminación"
+        message={`¿Está seguro que desea eliminar el curso "${currentCurso?.nombre}"? Esta acción no se puede deshacer.`}
+        confirmText="Eliminar"
+        cancelText="Cancelar"
+      />
     </div>
   );
 };
