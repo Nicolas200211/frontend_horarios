@@ -1,9 +1,8 @@
-import { 
-  getAulas as getAulasApi, 
-  getCursos as getCursosApi, 
-  getProfesores as getProfesoresApi, 
+import {
+  getAulas as getAulasApi,
+  getCursos as getCursosApi,
+  getProfesores as getProfesoresApi,
   getUnidadesAcademicas as getUnidadesAcademicasApi,
-  getDiasSemana as getDiasSemanaApi,
   getTiposClase as getTiposClaseApi
 } from './horariosService';
 import type { Aula, Curso, Profesor, UnidadAcademica } from './types';
@@ -44,16 +43,6 @@ export const getUnidadesAcademicas = async (): Promise<UnidadAcademica[]> => {
     return response || [];
   } catch (error) {
     console.error('Error al obtener unidades académicas:', error);
-    return [];
-  }
-};
-
-export const getDiasSemana = async (): Promise<string[]> => {
-  try {
-    const response = await getDiasSemanaApi();
-    return response || [];
-  } catch (error) {
-    console.error('Error al obtener días de la semana:', error);
     return [];
   }
 };
